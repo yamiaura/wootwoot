@@ -4,9 +4,15 @@ import (
 	json "encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"log"
 	"math"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +49,26 @@ const (
 	MinBrushSize           = 8
 	MaxBrushSize           = 32
 )
+
+// Color palette used in the game (matching client-side colors)
+var gameColors = []color.RGBA{
+	{0, 0, 0, 255},       // Black
+	{255, 255, 255, 255}, // White
+	{193, 193, 193, 255}, // Light Gray
+	{76, 76, 76, 255},    // Dark Gray
+	{116, 11, 7, 255},    // Dark Red
+	{221, 19, 26, 255},   // Red
+	{255, 113, 0, 255},   // Orange
+	{255, 228, 0, 255},   // Yellow
+	{203, 232, 107, 255}, // Light Green
+	{0, 204, 0, 255},     // Green
+	{0, 178, 148, 255},   // Teal
+	{0, 169, 224, 255},   // Light Blue
+	{0, 84, 166, 255},    // Blue
+	{105, 37, 147, 255},  // Purple
+	{146, 7, 131, 255},   // Magenta
+	{255, 49, 156, 255},  // Pink
+}
 
 // SettingBounds defines the lower and upper bounds for the user-specified
 // lobby creation input.
@@ -306,6 +332,174 @@ func (lobby *Lobby) wasLastDrawEventFill() bool {
 	}
 	_, isFillEvent := lobby.currentDrawing[len(lobby.currentDrawing)-1].(*FillEvent)
 	return isFillEvent
+}
+
+// SaveDrawingAsImage saves the current drawing as a PNG image file
+func (lobby *Lobby) SaveDrawingAsImage() error {
+	if len(lobby.currentDrawing) == 0 {
+		return nil // Nothing to save
+	}
+
+	// Create drawings directory structure: drawings/roomID/
+	drawingsDir := filepath.Join("drawings", lobby.LobbyID)
+	if err := os.MkdirAll(drawingsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create drawings directory: %w", err)
+	}
+
+	// Create image canvas
+	img := image.NewRGBA(image.Rect(0, 0, DrawingBoardBaseWidth, DrawingBoardBaseHeight))
+	
+	// Fill with white background
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{255, 255, 255, 255}}, image.Point{}, draw.Src)
+
+	// Render each drawing command
+	for _, cmd := range lobby.currentDrawing {
+		switch v := cmd.(type) {
+		case *LineEvent:
+			lobby.drawLine(img, v)
+		case *FillEvent:
+			lobby.drawFill(img, v)
+		}
+	}
+
+	// Generate filename with timestamp and word
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	word := lobby.CurrentWord
+	if word == "" {
+		word = "unknown"
+	}
+	filename := fmt.Sprintf("round_%d_%s_%s.png", lobby.Round, word, timestamp)
+	filepath := filepath.Join(drawingsDir, filename)
+
+	// Save image
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create image file: %w", err)
+	}
+	defer file.Close()
+
+	if err := png.Encode(file, img); err != nil {
+		return fmt.Errorf("failed to encode PNG: %w", err)
+	}
+
+	log.Printf("Drawing saved: %s", filepath)
+	return nil
+}
+
+// drawLine renders a line on the image
+func (lobby *Lobby) drawLine(img *image.RGBA, line *LineEvent) {
+	if int(line.Data.Color) >= len(gameColors) {
+		return // Invalid color index
+	}
+	
+	lineColor := gameColors[line.Data.Color]
+	width := int(line.Data.Width)
+	
+	// Simple line drawing algorithm (Bresenham's line algorithm would be better)
+	x1, y1 := int(line.Data.X), int(line.Data.Y)
+	x2, y2 := int(line.Data.X2), int(line.Data.Y2)
+	
+	// Draw thick line by drawing multiple pixels around the line
+	for dx := -width/2; dx <= width/2; dx++ {
+		for dy := -width/2; dy <= width/2; dy++ {
+			if dx*dx + dy*dy <= (width/2)*(width/2) {
+				lobby.drawSimpleLine(img, x1+dx, y1+dy, x2+dx, y2+dy, lineColor)
+			}
+		}
+	}
+}
+
+// drawSimpleLine draws a simple line between two points
+func (lobby *Lobby) drawSimpleLine(img *image.RGBA, x1, y1, x2, y2 int, c color.RGBA) {
+	dx := abs(x2 - x1)
+	dy := abs(y2 - y1)
+	
+	var sx, sy int
+	if x1 < x2 {
+		sx = 1
+	} else {
+		sx = -1
+	}
+	if y1 < y2 {
+		sy = 1
+	} else {
+		sy = -1
+	}
+	
+	err := dx - dy
+	x, y := x1, y1
+	
+	for {
+		if x >= 0 && x < DrawingBoardBaseWidth && y >= 0 && y < DrawingBoardBaseHeight {
+			img.Set(x, y, c)
+		}
+		
+		if x == x2 && y == y2 {
+			break
+		}
+		
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x += sx
+		}
+		if e2 < dx {
+			err += dx
+			y += sy
+		}
+	}
+}
+
+// drawFill implements a simple flood fill algorithm
+func (lobby *Lobby) drawFill(img *image.RGBA, fill *FillEvent) {
+	if int(fill.Data.Color) >= len(gameColors) {
+		return // Invalid color index
+	}
+	
+	fillColor := gameColors[fill.Data.Color]
+	x, y := int(fill.Data.X), int(fill.Data.Y)
+	
+	if x < 0 || x >= DrawingBoardBaseWidth || y < 0 || y >= DrawingBoardBaseHeight {
+		return
+	}
+	
+	originalColor := img.RGBAAt(x, y)
+	if originalColor == fillColor {
+		return // Same color, nothing to fill
+	}
+	
+	// Simple flood fill using a stack
+	stack := []image.Point{{x, y}}
+	
+	for len(stack) > 0 {
+		point := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		
+		px, py := point.X, point.Y
+		if px < 0 || px >= DrawingBoardBaseWidth || py < 0 || py >= DrawingBoardBaseHeight {
+			continue
+		}
+		
+		if img.RGBAAt(px, py) != originalColor {
+			continue
+		}
+		
+		img.Set(px, py, fillColor)
+		
+		// Add neighboring pixels to stack
+		stack = append(stack, image.Point{px + 1, py})
+		stack = append(stack, image.Point{px - 1, py})
+		stack = append(stack, image.Point{px, py + 1})
+		stack = append(stack, image.Point{px, py - 1})
+	}
+}
+
+// abs returns the absolute value of an integer
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func (lobby *Lobby) isAnyoneStillGuessing() bool {
@@ -578,6 +772,13 @@ func advanceLobbyPredefineDrawer(lobby *Lobby, roundOver bool, newDrawer *Player
 		newDrawerScore := lobby.calculateDrawerScore()
 		drawer.LastScore = newDrawerScore
 		drawer.Score += newDrawerScore
+	}
+
+	// Save the current drawing before clearing it
+	if lobby.SaveDrawingsEnabled {
+		if err := lobby.SaveDrawingAsImage(); err != nil {
+			log.Printf("Failed to save drawing for lobby %s: %v", lobby.LobbyID, err)
+		}
 	}
 
 	// We need this for the next-turn / game-over event, in order to allow the
@@ -928,6 +1129,7 @@ func CreateLobby(
 	drawingTime, rounds, maxPlayers, customWordsPerTurn, clientsPerIPLimit int,
 	customWords []string,
 	scoringCalculation ScoreCalculation,
+	saveDrawings bool,
 ) (*Player, *Lobby, error) {
 	if desiredLobbyId == "" {
 		desiredLobbyId = uuid.Must(uuid.NewV4()).String()
@@ -943,9 +1145,10 @@ func CreateLobby(
 			Public:             publicLobby,
 		},
 		CustomWords:      customWords,
-		currentDrawing:   make([]any, 0),
-		State:            Unstarted,
-		ScoreCalculation: scoringCalculation,
+		currentDrawing:      make([]any, 0),
+		State:               Unstarted,
+		ScoreCalculation:    scoringCalculation,
+		SaveDrawingsEnabled: saveDrawings,
 	}
 
 	if len(customWords) > 1 {

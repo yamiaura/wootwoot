@@ -72,6 +72,8 @@ type Config struct {
 	Port                 uint16               `env:"PORT"`
 	CORS                 CORS                 `envPrefix:"CORS_"`
 	LobbyCleanup         LobbyCleanup         `envPrefix:"LOBBY_CLEANUP_"`
+	// SaveDrawings enables saving drawings as PNG files to disk
+	SaveDrawings         bool                 `env:"SAVE_DRAWINGS"`
 }
 
 var Default = Config{
@@ -106,6 +108,8 @@ var Default = Config{
 		Interval:                  90 * time.Second,
 		PlayerInactivityThreshold: 75 * time.Second,
 	},
+	SaveDrawings: false, // Disabled by default
+}
 }
 
 // Load loads the configuration from the environment. If a .env file is

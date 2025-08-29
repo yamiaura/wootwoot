@@ -166,7 +166,8 @@ func (handler *V1Handler) postLobby(writer http.ResponseWriter, request *http.Re
 	playerName := GetPlayername(request)
 	player, lobby, err := game.CreateLobby(lobbyId, playerName,
 		languageKey, publicLobby, drawingTime, rounds, maxPlayers,
-		customWordsPerTurn, clientsPerIPLimit, customWords, scoreCalculation)
+		customWordsPerTurn, clientsPerIPLimit, customWords, scoreCalculation,
+		handler.cfg.SaveDrawings)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return

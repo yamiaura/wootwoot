@@ -93,6 +93,9 @@ type Lobby struct {
 
 	WriteObject          func(*Player, any) error
 	WritePreparedMessage func(*Player, *gws.Broadcaster) error
+	
+	// SaveDrawingsEnabled controls whether drawings should be saved to disk
+	SaveDrawingsEnabled  bool
 }
 
 // MaxPlayerNameLength defines how long a string can be at max when used

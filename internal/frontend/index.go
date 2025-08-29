@@ -272,7 +272,7 @@ func (handler *SSRHandler) ssrCreateLobby(writer http.ResponseWriter, request *h
 
 	player, lobby, err := game.CreateLobby(lobbyId, playerName, languageKey,
 		publicLobby, drawingTime, rounds, maxPlayers, customWordsPerTurn,
-		clientsPerIPLimit, customWords, scoreCalculation)
+		clientsPerIPLimit, customWords, scoreCalculation, handler.cfg.SaveDrawings)
 	if err != nil {
 		pageData.Errors = append(pageData.Errors, err.Error())
 		if err := pageTemplates.ExecuteTemplate(writer, "index", pageData); err != nil {
