@@ -110,7 +110,6 @@ var Default = Config{
 	},
 	SaveDrawings: false, // Disabled by default
 }
-}
 
 // Load loads the configuration from the environment. If a .env file is
 // available, it will be loaded as well. Values found in the environment
